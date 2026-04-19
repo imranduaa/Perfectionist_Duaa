@@ -52,7 +52,7 @@ fun SitIdeal(navController: NavController, mac: String) {
                 delay(8000)
                 message = "Recording Complete"
                 delay(100)
-                navController.navigate("calibration/$mac")
+                navController.navigate("target_date/$mac")
                 isRecording = false
             }
         }

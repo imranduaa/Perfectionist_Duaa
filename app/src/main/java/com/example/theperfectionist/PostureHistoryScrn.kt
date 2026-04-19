@@ -11,14 +11,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -28,7 +25,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -42,7 +38,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -50,44 +45,39 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import java.io.File
 import kotlin.math.max
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PostureHistoryScrn(navController: NavController) {
     val context = LocalContext.current
-    val storage = remember { PostureStorage(context) }
-    var deleteDialogOpen by remember { mutableStateOf(false) }
     var refreshKey by remember { mutableStateOf(0) }
+    var showDemo by remember { mutableStateOf(false) }
 
-    val samples by produceState(initialValue = emptyList<PostureSample>(), refreshKey) {
-        value = withContext(Dispatchers.IO) { storage.readTodaySamples() }
+    val analysis by produceState<PostureAnalysisResult?>(
+        initialValue = null,
+        key1 = refreshKey,
+        key2 = showDemo
+    ) {
+        value = withContext(Dispatchers.IO) {
+            val savedTargetDays = TargetPrefs.getTargetDays(context)
+
+            val samples = if (showDemo) {
+                PostureAnalytics.loadDemoCsv(context)
+            } else {
+                loadCurrentUserSamples(context)
+            }
+
+            PostureAnalytics.analyze(
+                samples = samples,
+                targetDays = savedTargetDays
+            )
+        }
     }
 
-    val sampleCount by produceState(initialValue = 0, refreshKey) {
-        value = withContext(Dispatchers.IO) { storage.sampleCount() }
-    }
-
-    val latestSaved by produceState(initialValue = "No saved data yet", refreshKey) {
-        value = withContext(Dispatchers.IO) { storage.latestSavedTimeText() }
-    }
-
-    val averageScore = if (samples.isNotEmpty()) {
-        samples.map { it.score }.average().toFloat()
-    } else {
-        0f
-    }
-
-    val worstScore = samples.maxOfOrNull { it.score } ?: 0f
-    val postureSummary = when {
-        worstScore >= 15f -> "Mostly poor posture"
-        worstScore >= 8f -> "Mixed posture"
-        samples.isNotEmpty() -> "Mostly good posture"
-        else -> "No data yet"
-    }
+    val result = analysis
+    val savedTargetDays = TargetPrefs.getTargetDays(context)
 
     Box(
         modifier = Modifier
@@ -129,93 +119,250 @@ fun PostureHistoryScrn(navController: NavController) {
                     .padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                StatsCard(
-                    title = "Today",
-                    lines = listOf(
-                        "Samples shown: ${samples.size}",
-                        "All saved samples: $sampleCount",
-                        "Average score: ${"%.2f".format(averageScore)}",
-                        "Worst score: ${"%.2f".format(worstScore)}",
-                        "Summary: $postureSummary",
-                        "Last saved: $latestSaved"
-                    )
-                )
-
-                Card(
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.94f)),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = "Deviation graph for today",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFF003366)
+                    Button(
+                        onClick = { showDemo = false },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (!showDemo) Color(0xFF005BBB) else Color.White.copy(alpha = 0.85f)
                         )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        if (samples.size < 2) {
-                            Text(
-                                text = "Start receiving BLE data and leave the app running for a bit. Once at least 2 saved samples exist, the line graph will appear here.",
-                                color = Color.DarkGray
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            EmptyChart()
-                        } else {
-                            PostureLineChart(samples = samples)
-                        }
-                        Spacer(modifier = Modifier.height(10.dp))
+                    ) {
                         Text(
-                            text = "Lower values mean posture closer to the baseline. Higher values mean more deviation from ideal posture.",
-                            color = Color.DarkGray,
-                            style = MaterialTheme.typography.bodyMedium
+                            text = "Current User",
+                            color = if (!showDemo) Color.White else Color(0xFF003366)
+                        )
+                    }
+
+                    Button(
+                        onClick = { showDemo = true },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (showDemo) Color(0xFF005BBB) else Color.White.copy(alpha = 0.85f)
+                        )
+                    ) {
+                        Text(
+                            text = "Demo 7-Day",
+                            color = if (showDemo) Color.White else Color(0xFF003366)
                         )
                     }
                 }
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Button(
-                        onClick = { refreshKey++ },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF03DAC5).copy(alpha = 0.35f))
-                    ) {
-                        Text("Refresh", color = Color.DarkGray)
+                InfoBanner(
+                    text = if (showDemo) {
+                        "Showing demo history built from a 7-day sample dataset."
+                    } else {
+                        "This is a fresh user journey. The more you wear the device, the smarter your trend becomes."
+                    }
+                )
+
+                if (result == null) {
+                    StatsCard(
+                        title = "Loading",
+                        lines = listOf(
+                            if (showDemo)
+                                "Reading demo CSV and building predictions..."
+                            else
+                                "Preparing your posture journey..."
+                        )
+                    )
+                } else {
+                    val hasGraphData = result.graphPoints.isNotEmpty()
+
+                    val summaryTitle = if (showDemo) {
+                        "Demo 7-Day Posture Summary"
+                    } else {
+                        "Current User Posture Journey"
                     }
 
-                    OutlinedButton(
-                        onClick = { deleteDialogOpen = true },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF7A0000))
-                    ) {
-                        Text("Delete All Data")
+                    val summaryLines = if (showDemo) {
+                        listOf(
+                            "Days in graph: ${result.graphPoints.size}",
+                            "Target goal: $savedTargetDays days",
+                            result.targetProbabilityMessage,
+                            result.bestPostureTimeMessage,
+                            result.weakPostureTimeMessage,
+                            result.guidanceMessage
+                        )
+                    } else {
+                        if (hasGraphData) {
+                            listOf(
+                                "Days in graph: ${result.graphPoints.size}",
+                                "Target goal: $savedTargetDays days",
+                                result.targetProbabilityMessage,
+                                result.bestPostureTimeMessage,
+                                result.weakPostureTimeMessage,
+                                result.guidanceMessage
+                            )
+                        } else {
+                            listOf(
+                                "Target goal: $savedTargetDays days",
+                                "✨ You’ve started your posture journey.",
+                                "📈 Your personal prediction begins after about 3 days of data.",
+                                "🧠 By day 7, your posture trend becomes much smarter.",
+                                "🎯 Keep wearing the device daily to unlock deeper insights."
+                            )
+                        }
                     }
+
+                    StatsCard(
+                        title = summaryTitle,
+                        lines = summaryLines
+                    )
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color.White.copy(alpha = 0.94f)
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp)
+                        ) {
+                            Text(
+                                text = if (showDemo)
+                                    "Ideal posture trend (demo 7-day history)"
+                                else
+                                    "Ideal posture trend (current user)",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFF003366)
+                            )
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            if (result.graphPoints.isEmpty()) {
+                                EmptyLearningChart(
+                                    headline = if (showDemo)
+                                        "No demo graph data found"
+                                    else
+                                        "Your graph is getting ready ✨",
+                                    subtext = if (showDemo)
+                                        "The demo history file is empty."
+                                    else
+                                        "Wear the device for a few days and your posture trend will begin to appear here."
+                                )
+                            } else {
+                                SevenDayTrendChart(points = result.graphPoints)
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            Text(
+                                text = if (showDemo)
+                                    "Higher percentages mean more IDEAL posture samples in the demo dataset."
+                                else
+                                    "This area will grow into your personal posture story as more data is collected.",
+                                color = Color.DarkGray,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                    }
+                }
+
+                Button(
+                    onClick = { refreshKey++ },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF03DAC5).copy(alpha = 0.35f)
+                    )
+                ) {
+                    Text(
+                        text = "Refresh",
+                        color = Color.DarkGray
+                    )
                 }
             }
         }
     }
+}
 
-    if (deleteDialogOpen) {
-        AlertDialog(
-            onDismissRequest = { deleteDialogOpen = false },
-            title = { Text("Delete posture data?") },
-            text = { Text("This removes all saved posture samples from the phone.") },
-            confirmButton = {
-                Button(onClick = {
-                    storage.clearAllSamples()
-                    refreshKey++
-                    deleteDialogOpen = false
-                }) {
-                    Text("Delete")
-                }
-            },
-            dismissButton = {
-                OutlinedButton(onClick = { deleteDialogOpen = false }) {
-                    Text("Cancel")
-                }
+private fun loadCurrentUserSamples(context: android.content.Context): List<PostureSample> {
+    val file = File(context.filesDir, "posture_samples.csv")
+    if (!file.exists()) return emptyList()
+
+    return file.readLines()
+        .drop(1)
+        .mapNotNull { line -> parseStoredSampleLine(line) }
+}
+
+private fun parseStoredSampleLine(line: String): PostureSample? {
+    if (line.isBlank()) return null
+
+    val parts = line.split(",").map { it.trim() }
+    if (parts.size < 4) return null
+
+    val timestamp = parts.getOrNull(0)?.toLongOrNull() ?: return null
+    val roll = parts.getOrNull(1)?.toFloatOrNull() ?: return null
+    val pitch = parts.getOrNull(2)?.toFloatOrNull() ?: return null
+
+    return when {
+        parts.size >= 5 -> {
+            val fourth = parts[3]
+            val fifth = parts[4]
+
+            if (fifth.equals("IDEAL", ignoreCase = true) ||
+                fifth.equals("NORMAL", ignoreCase = true)
+            ) {
+                PostureSample(
+                    timestamp = timestamp,
+                    roll = roll,
+                    pitch = pitch,
+                    family = fourth,
+                    postureState = fifth
+                )
+            } else if (fourth.equals("IDEAL", ignoreCase = true) ||
+                fourth.equals("NORMAL", ignoreCase = true)
+            ) {
+                PostureSample(
+                    timestamp = timestamp,
+                    roll = roll,
+                    pitch = pitch,
+                    family = "UNKNOWN",
+                    postureState = fourth
+                )
+            } else {
+                PostureSample(
+                    timestamp = timestamp,
+                    roll = roll,
+                    pitch = pitch,
+                    family = fourth,
+                    postureState = "NORMAL"
+                )
             }
+        }
+
+        else -> {
+            val posture = parts[3]
+            PostureSample(
+                timestamp = timestamp,
+                roll = roll,
+                pitch = pitch,
+                family = "UNKNOWN",
+                postureState = posture
+            )
+        }
+    }
+}
+
+@Composable
+private fun InfoBanner(text: String) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = Color.White.copy(alpha = 0.88f)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(14.dp),
+            color = Color(0xFF003366),
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium
         )
     }
 }
@@ -224,26 +371,37 @@ fun PostureHistoryScrn(navController: NavController) {
 private fun StatsCard(title: String, lines: List<String>) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.94f)),
+        colors = CardDefaults.cardColors(
+            containerColor = Color.White.copy(alpha = 0.94f)
+        ),
         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = Color(0xFF003366)
             )
+
             Spacer(modifier = Modifier.height(8.dp))
+
             lines.forEach { line ->
-                Text(text = line, color = Color.DarkGray)
+                Text(
+                    text = line,
+                    color = Color.DarkGray,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(modifier = Modifier.height(4.dp))
             }
         }
     }
 }
 
 @Composable
-private fun EmptyChart() {
+private fun EmptyLearningChart(headline: String, subtext: String) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -251,16 +409,31 @@ private fun EmptyChart() {
             .background(Color(0xFFF4F6F8), RoundedCornerShape(12.dp)),
         contentAlignment = Alignment.Center
     ) {
-        Text(text = "No graph data yet", color = Color.Gray)
+        Column(
+            modifier = Modifier.padding(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = headline,
+                color = Color(0xFF003366),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = subtext,
+                color = Color.Gray,
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
     }
 }
 
 @Composable
-private fun PostureLineChart(samples: List<PostureSample>) {
-    val minTimestamp = samples.first().timestamp.toFloat()
-    val maxTimestamp = samples.last().timestamp.toFloat()
-    val maxScore = max(samples.maxOf { it.score }, 1f)
-    val timeFormatter = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
+private fun SevenDayTrendChart(points: List<DailyTrendPoint>) {
+    val maxValue = max(points.maxOfOrNull { it.idealPercentage } ?: 100f, 100f)
 
     Column {
         Canvas(
@@ -278,24 +451,21 @@ private fun PostureLineChart(samples: List<PostureSample>) {
             val usableWidth = width - leftPad - 12f
             val usableHeight = height - topPad - bottomPad
 
-            // axes
             drawLine(
                 color = Color.Gray,
                 start = Offset(leftPad, topPad),
                 end = Offset(leftPad, topPad + usableHeight),
-                strokeWidth = 3f,
-                cap = StrokeCap.Round
+                strokeWidth = 3f
             )
+
             drawLine(
                 color = Color.Gray,
                 start = Offset(leftPad, topPad + usableHeight),
                 end = Offset(leftPad + usableWidth, topPad + usableHeight),
-                strokeWidth = 3f,
-                cap = StrokeCap.Round
+                strokeWidth = 3f
             )
 
-            // guide lines
-            repeat(4) { index ->
+            repeat(5) { index ->
                 val y = topPad + (usableHeight / 4f) * index
                 drawLine(
                     color = Color.LightGray.copy(alpha = 0.65f),
@@ -306,22 +476,26 @@ private fun PostureLineChart(samples: List<PostureSample>) {
             }
 
             val path = Path()
-            samples.forEachIndexed { index, sample ->
-                val xRatio = if (maxTimestamp == minTimestamp) {
-                    0f
-                } else {
-                    (sample.timestamp - minTimestamp) / (maxTimestamp - minTimestamp)
-                }
-                val yRatio = sample.score / maxScore
+
+            points.forEachIndexed { index, point ->
+                val xRatio =
+                    if (points.size == 1) 0f
+                    else index.toFloat() / (points.size - 1).toFloat()
+
+                val yRatio = point.idealPercentage / maxValue
 
                 val x = leftPad + usableWidth * xRatio
                 val y = topPad + usableHeight - (usableHeight * yRatio)
 
-                if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                if (index == 0) {
+                    path.moveTo(x, y)
+                } else {
+                    path.lineTo(x, y)
+                }
 
                 drawCircle(
-                    color = scoreColor(sample.score),
-                    radius = 5f,
+                    color = Color(0xFF005BBB),
+                    radius = 6f,
                     center = Offset(x, y)
                 )
             }
@@ -334,36 +508,18 @@ private fun PostureLineChart(samples: List<PostureSample>) {
         }
 
         Spacer(modifier = Modifier.height(8.dp))
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(timeFormatter.format(Date(samples.first().timestamp)), color = Color.DarkGray)
-            Text(timeFormatter.format(Date(samples.last().timestamp)), color = Color.DarkGray)
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            LegendChip(label = "Good", color = Color(0xFF2E7D32))
-            LegendChip(label = "Watch", color = Color(0xFFF9A825))
-            LegendChip(label = "Bad", color = Color(0xFFC62828))
-        }
-    }
-}
 
-@Composable
-private fun LegendChip(label: String, color: Color) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(
-            modifier = Modifier
-                .size(12.dp)
-                .background(color = color, shape = RoundedCornerShape(50))
-        )
-        Spacer(modifier = Modifier.width(6.dp))
-        Text(label, color = Color.DarkGray)
-    }
-}
-
-private fun scoreColor(score: Float): Color {
-    return when {
-        score < 5f -> Color(0xFF2E7D32)
-        score < 10f -> Color(0xFFF9A825)
-        else -> Color(0xFFC62828)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            points.forEach { point ->
+                Text(
+                    text = point.dayLabel,
+                    color = Color.DarkGray,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
     }
 }

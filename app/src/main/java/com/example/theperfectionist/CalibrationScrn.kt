@@ -21,6 +21,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -38,7 +40,6 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import java.nio.charset.Charset
 import java.util.UUID
-import kotlin.math.sqrt
 
 @Composable
 fun CalibrationScrn(
@@ -47,7 +48,12 @@ fun CalibrationScrn(
     navController: NavController,
     showHome: Boolean
 ) {
-    Box(Modifier.fillMaxSize().background(Color(0xFFA2CCFF).copy(alpha = 0.85f)))
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color(0xFFA2CCFF).copy(alpha = 0.85f))
+    )
+
     val context = LocalContext.current
     val storage = remember { PostureStorage(context) }
 
@@ -60,8 +66,8 @@ fun CalibrationScrn(
     var status by remember { mutableStateOf("Connecting...") }
     var roll by remember { mutableStateOf("--") }
     var pitch by remember { mutableStateOf("--") }
-    var posture by remember { mutableStateOf("--") }
-    var scoreText by remember { mutableStateOf("--") }
+    var postureStateText by remember { mutableStateOf("--") }
+    var familyText by remember { mutableStateOf("--") }
     var savedCount by remember { mutableStateOf(storage.sampleCount()) }
     var lastSavedTime by remember { mutableStateOf(storage.latestSavedTimeText()) }
     var lastSavedMillis by remember { mutableLongStateOf(0L) }
@@ -73,7 +79,11 @@ fun CalibrationScrn(
         object : BluetoothGattCallback() {
 
             @SuppressLint("MissingPermission")
-            override fun onConnectionStateChange(g: BluetoothGatt, statusCode: Int, newState: Int) {
+            override fun onConnectionStateChange(
+                g: BluetoothGatt,
+                statusCode: Int,
+                newState: Int
+            ) {
                 if (newState == BluetoothProfile.STATE_CONNECTED) {
                     status = "Connected. Discovering services..."
                     bt.isConnected = true
@@ -85,7 +95,10 @@ fun CalibrationScrn(
             }
 
             @SuppressLint("MissingPermission")
-            override fun onServicesDiscovered(g: BluetoothGatt, statusCode: Int) {
+            override fun onServicesDiscovered(
+                g: BluetoothGatt,
+                statusCode: Int
+            ) {
                 val service = g.getService(serviceUuid)
                 val characteristic = service?.getCharacteristic(charUuid)
 
@@ -123,21 +136,23 @@ fun CalibrationScrn(
 
                 roll = String.format("%.2f", parsed.roll)
                 pitch = String.format("%.2f", parsed.pitch)
-                posture = parsed.posture?.toString() ?: "--"
-                scoreText = String.format("%.2f", parsed.score)
+                postureStateText = parsed.postureState
+                familyText = parsed.family
 
                 val now = System.currentTimeMillis()
                 if (now - lastSavedMillis >= 2000L) {
                     lastSavedMillis = now
+
                     storage.appendSample(
                         PostureSample(
                             timestamp = now,
                             roll = parsed.roll,
                             pitch = parsed.pitch,
-                            posture = parsed.posture,
-                            score = parsed.score
+                            family = parsed.family,
+                            postureState = parsed.postureState
                         )
                     )
+
                     savedCount += 1
                     lastSavedTime = storage.latestSavedTimeText()
                 }
@@ -167,8 +182,8 @@ fun CalibrationScrn(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         if (showHome) {
-            androidx.compose.material3.IconButton(onClick = { navController.navigate("screen_3") }) {
-                androidx.compose.material3.Icon(
+            IconButton(onClick = { navController.navigate("screen_3") }) {
+                Icon(
                     imageVector = Icons.Filled.Home,
                     contentDescription = "Home"
                 )
@@ -179,10 +194,11 @@ fun CalibrationScrn(
 
         OutlinedButton(
             onClick = { disconnect() },
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF03DAC5).copy(alpha = 0.15f)),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color(0xFF03DAC5).copy(alpha = 0.15f)
+            ),
             shape = RoundedCornerShape(20.dp),
             border = BorderStroke(2.dp, Color(0xFF009688).copy(alpha = 0.4f)),
-            elevation = null,
             contentPadding = PaddingValues(16.dp)
         ) {
             Text("Disconnect", color = Color.DarkGray)
@@ -190,13 +206,14 @@ fun CalibrationScrn(
 
         OutlinedButton(
             onClick = { navController.navigate("posture_history") },
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF03DAC5).copy(alpha = 0.15f)),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color(0xFF03DAC5).copy(alpha = 0.15f)
+            ),
             shape = RoundedCornerShape(20.dp),
             border = BorderStroke(2.dp, Color(0xFF009688).copy(alpha = 0.4f)),
-            elevation = null,
             contentPadding = PaddingValues(16.dp)
         ) {
-            Text("View Today\'s Graph", color = Color.DarkGray)
+            Text("View Today's Graph", color = Color.DarkGray)
         }
 
         Text("Status: $status")
@@ -204,8 +221,11 @@ fun CalibrationScrn(
 
         Text("Roll: $roll°", style = MaterialTheme.typography.headlineMedium)
         Text("Pitch: $pitch°", style = MaterialTheme.typography.headlineMedium)
-        Text("Posture: $posture", style = MaterialTheme.typography.headlineMedium)
-        Text("Deviation score: $scoreText", style = MaterialTheme.typography.headlineSmall)
+        Text(
+            "Posture State: $postureStateText",
+            style = MaterialTheme.typography.headlineMedium
+        )
+        Text("Family: $familyText", style = MaterialTheme.typography.headlineSmall)
         Text("Saved samples on phone: $savedCount", style = MaterialTheme.typography.bodyLarge)
         Text("Last saved: $lastSavedTime", style = MaterialTheme.typography.bodyLarge)
     }
@@ -214,8 +234,8 @@ fun CalibrationScrn(
 private data class ParsedBleReading(
     val roll: Float,
     val pitch: Float,
-    val posture: Int?,
-    val score: Float
+    val family: String,
+    val postureState: String
 )
 
 private fun parseIncomingPayload(text: String): ParsedBleReading? {
@@ -223,20 +243,17 @@ private fun parseIncomingPayload(text: String): ParsedBleReading? {
         .map { it.trim() }
         .filter { it.isNotEmpty() }
 
-    return when {
-        parts.size >= 3 -> {
-            val roll = parts[0].toFloatOrNull() ?: return null
-            val pitch = parts[1].toFloatOrNull() ?: return null
-            val posture = parts[2].toIntOrNull()
-            val score = sqrt((roll * roll) + (pitch * pitch))
-            ParsedBleReading(roll = roll, pitch = pitch, posture = posture, score = score)
-        }
+    if (parts.size < 4) return null
 
-        parts.size == 1 -> {
-            val score = parts[0].toFloatOrNull() ?: return null
-            ParsedBleReading(roll = 0f, pitch = 0f, posture = null, score = score)
-        }
+    val roll = parts[0].toFloatOrNull() ?: return null
+    val pitch = parts[1].toFloatOrNull() ?: return null
+    val family = parts[2]
+    val postureState = parts[3]
 
-        else -> null
-    }
+    return ParsedBleReading(
+        roll = roll,
+        pitch = pitch,
+        family = family,
+        postureState = postureState
+    )
 }

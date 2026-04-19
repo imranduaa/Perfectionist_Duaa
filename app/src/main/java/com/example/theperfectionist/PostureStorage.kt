@@ -10,7 +10,7 @@ import java.util.Locale
 class PostureStorage(private val context: Context) {
 
     private val fileName = "posture_samples.csv"
-    private val header = "timestamp,roll,pitch,posture,score\n"
+    private val header = "timestamp,roll,pitch,family,postureState\n"
 
     private fun file(): File = File(context.filesDir, fileName)
 
@@ -21,13 +21,12 @@ class PostureStorage(private val context: Context) {
             target.writeText(header)
         }
 
-        val postureValue = sample.posture?.toString() ?: ""
         val line = listOf(
             sample.timestamp,
             sample.roll,
             sample.pitch,
-            postureValue,
-            sample.score
+            sample.family,
+            sample.postureState
         ).joinToString(",") + "\n"
 
         target.appendText(line)
@@ -74,21 +73,22 @@ class PostureStorage(private val context: Context) {
 
     private fun parseLine(line: String): PostureSample? {
         if (line.isBlank()) return null
+
         val parts = line.split(",")
         if (parts.size < 5) return null
 
-        val timestamp = parts[0].toLongOrNull() ?: return null
-        val roll = parts[1].toFloatOrNull() ?: return null
-        val pitch = parts[2].toFloatOrNull() ?: return null
-        val posture = parts[3].toIntOrNull()
-        val score = parts[4].toFloatOrNull() ?: return null
+        val timestamp = parts[0].trim().toLongOrNull() ?: return null
+        val roll = parts[1].trim().toFloatOrNull() ?: return null
+        val pitch = parts[2].trim().toFloatOrNull() ?: return null
+        val family = parts[3].trim()
+        val postureState = parts[4].trim()
 
         return PostureSample(
             timestamp = timestamp,
             roll = roll,
             pitch = pitch,
-            posture = posture,
-            score = score
+            family = family,
+            postureState = postureState
         )
     }
 }
